@@ -1,0 +1,26 @@
+{
+  "name": "alph-zap",
+  "version": "0.1.0",
+  "description": "Nostr x Alephium identity bridge - derive Alephium addresses from Nostr npubs, sign with nsec via BIP-340 Schnorr",
+  "type": "module",
+  "main": "src/npub-to-alephium.js",
+  "exports": {
+    ".": "./src/npub-to-alephium.js"
+  },
+  "bin": {
+    "alph-zap-wallet": "src/nostr-alph-wallet.js"
+  },
+  "scripts": {
+    "test": "node src/npub-to-alephium.js",
+    "wallet": "node src/nostr-alph-wallet.js",
+    "serve": "npx serve web -l 3000"
+  },
+  "files": ["src/", "web/", "LICENSE", "README.md"],
+  "keywords": ["nostr", "alephium", "schnorr", "bip340", "zaps"],
+  "license": "MIT",
+  "dependencies": {
+    "@alephium/web3": "^2.0.8",
+    "@alephium/web3-wallet": "^2.0.8",
+    "nostr-tools": "^2.23.1"
+  }
+}

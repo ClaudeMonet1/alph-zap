@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ALPH Zaps — Nostr × Alephium</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    header {
+      background: #10102a;
+      border-bottom: 1px solid #1e1e3a;
+      padding: 1.2rem 1rem;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 1.4rem; letter-spacing: 0.02em; }
+    header h1 span.zap { color: #f7931a; }
+    .subtitle { color: #666; font-size: 0.85rem; margin-top: 0.2rem; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.7rem;
+      flex-wrap: wrap;
+    }
+    .toolbar input[type="text"] {
+      background: #1a1a3a;
+      border: 1px solid #2a2a4a;
+      color: #ccc;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      width: 240px;
+      font-family: monospace;
+    }
+    .toolbar button, .toolbar select {
+      background: #2a2a5a;
+      color: #ccc;
+      border: 1px solid #3a3a6a;
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .toolbar select { font-family: monospace; }
+    .toolbar button:hover { background: #3a3a6a; }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 0.3rem;
+    }
+    .status-dot.connecting { background: #f7931a; animation: blink 1s infinite; }
+    .status-dot.connected { background: #22c55e; }
+    .status-dot.error { background: #ef4444; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    #status-text { font-size: 0.75rem; color: #666; margin-top: 0.4rem; }
+    #feed {
+      max-width: 620px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+    .note {
+      background: #12122a;
+      border: 1px solid #1e1e3a;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      transition: border-color 0.2s;
+    }
+    .note:hover { border-color: #2a2a5a; }
+    .note-header {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.7rem;
+    }
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: #2a2a4a;
+      flex-shrink: 0;
+      object-fit: cover;
+    }
+    .author-info { flex: 1; min-width: 0; }
+    .author-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .author-npub {
+      color: #555;
+      font-size: 0.75rem;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .timestamp { color: #555; font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; }
+    .note-content {
+      line-height: 1.5;
+      margin-bottom: 0.75rem;
+      word-break: break-word;
+      white-space: pre-wrap;
+      font-size: 0.93rem;
+    }
+    .note-footer { display: flex; align-items: center; justify-content: flex-end; }
+    .alph-zap-btn {
+      background: linear-gradient(135deg, #f7931a 0%, #f2a900 100%);
+      color: #000;
+      border: none;
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.82rem;
+      transition: opacity 0.15s;
+    }
+    .alph-zap-btn:hover { opacity: 0.85; }
+
+    /* --- Zap panel --- */
+    .zap-panel {
+      margin-top: 0.5rem;
+      padding: 0.6rem 0.7rem;
+      background: #0d0d20;
+      border: 1px solid #1e1e3a;
+      border-radius: 8px;
+      display: none;
+    }
+    .zap-panel.open { display: block; }
+    .zap-label { font-size: 0.78rem; color: #f7931a; font-weight: 600; }
+    .group-badge {
+      background: #1e1e3a; color: #888; font-size: 0.68rem;
+      padding: 0.12rem 0.4rem; border-radius: 4px; white-space: nowrap;
+    }
+    .copy-sm {
+      background: #2a2a5a; color: #aaa; border: none; padding: 0.2rem 0.5rem;
+      border-radius: 4px; cursor: pointer; font-size: 0.7rem; white-space: nowrap;
+    }
+    .copy-sm:hover { background: #3a3a6a; }
+    .copy-sm.ok { background: #22c55e; color: #000; }
+
+    /* Amount selector */
+    .amount-presets { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+    .amount-presets button {
+      background: #1a1a3a; color: #ccc; border: 1px solid #2a2a4a;
+      padding: 0.25rem 0.6rem; border-radius: 5px; cursor: pointer;
+      font-size: 0.75rem; font-weight: 600; transition: all 0.15s;
+    }
+    .amount-presets button:hover { border-color: #f7931a; color: #f7931a; }
+    .amount-presets button.active { background: #f7931a; color: #000; border-color: #f7931a; }
+    .amount-input-row { display: flex; align-items: center; gap: 0.3rem; }
+    .amount-input-row input {
+      background: #1a1a3a; border: 1px solid #2a2a4a; color: #eee;
+      padding: 0.25rem 0.4rem; border-radius: 5px; font-size: 0.78rem;
+      width: 80px; font-family: monospace; text-align: right;
+    }
+    .amount-input-row input:focus { border-color: #f7931a; outline: none; }
+    .amount-input-row span { color: #888; font-size: 0.75rem; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #f7931a, #f2a900);
+      color: #000; border: none; padding: 0.5rem 1.2rem;
+      border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.85rem;
+      width: 100%; transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    /* Status / results */
+    .zap-status {
+      margin-top: 0.35rem; padding: 0.35rem 0.5rem;
+      border-radius: 5px; font-size: 0.72rem;
+    }
+    .zap-status.info { background: #1a1a3a; color: #aaa; }
+    .zap-status.ok { background: #0a2a0a; color: #22c55e; border: 1px solid #1a3a1a; }
+    .zap-status.err { background: #2a0a0a; color: #ef4444; border: 1px solid #3a1a1a; }
+    .zap-status a { color: #7c8cff; }
+    .zap-status .mono { font-family: monospace; font-size: 0.72rem; word-break: break-all; }
+
+    .nip05 { color: #22c55e; font-size: 0.7rem; }
+    #empty-state { text-align: center; padding: 3rem 1rem; color: #444; }
+    #empty-state .spinner {
+      display: inline-block; width: 24px; height: 24px;
+      border: 3px solid #2a2a4a; border-top-color: #f7931a;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-inline {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #0005; border-top-color: #000;
+      border-radius: 50%; animation: spin 0.6s linear infinite;
+      vertical-align: middle; margin-right: 0.3rem;
+    }
+
+    /* New notes pill */
+    #new-notes-pill {
+      display: none;
+      position: fixed;
+      top: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #f7931a, #f2a900);
+      color: #000;
+      border: none;
+      padding: 0.4rem 1rem;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.8rem;
+      z-index: 20;
+      box-shadow: 0 2px 12px rgba(247,147,26,0.4);
+      transition: opacity 0.2s;
+    }
+    #new-notes-pill:hover { opacity: 0.9; }
+    #new-notes-pill.visible { display: block; }
+
+    /* Identity banner */
+    #identity-banner {
+      max-width: 620px;
+      margin: 0.75rem auto 0;
+      background: #12122a;
+      border: 1px solid #1e1e3a;
+      border-radius: 10px;
+      padding: 0.8rem 0.9rem;
+      display: none;
+    }
+    #identity-banner.visible { display: flex; gap: 0.9rem; align-items: flex-start; }
+    #identity-banner .id-qr canvas {
+      border-radius: 6px; background: #fff; padding: 4px;
+    }
+    #identity-banner .id-info { flex: 1; min-width: 0; }
+    #identity-banner .id-title {
+      font-size: 0.75rem; color: #f7931a; font-weight: 600; margin-bottom: 0.35rem;
+    }
+    #identity-banner .id-row {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.73rem; font-family: monospace; color: #aaa;
+      margin-bottom: 0.15rem;
+    }
+    #identity-banner .id-row .id-label { color: #666; min-width: 50px; }
+    #identity-banner .id-row .id-val { word-break: break-all; flex: 1; }
+    #identity-banner .id-row a { color: #7c8cff; text-decoration: none; }
+    #identity-banner .id-row a:hover { text-decoration: underline; }
+    #identity-banner .id-balance {
+      font-size: 0.85rem; font-weight: 700; color: #22c55e; margin: 0.3rem 0 0.1rem;
+    }
+    #identity-banner .id-balance.loading { color: #666; font-weight: 400; font-size: 0.75rem; }
+    #identity-banner .id-actions {
+      display: flex; gap: 0.4rem; margin-top: 0.35rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="zap">ALPH</span> Zaps</h1>
+    <div class="subtitle">Nostr × Alephium — every npub has an ALPH address</div>
+    <div class="toolbar">
+      <input type="text" id="relay-input" value="wss://relay.damus.io" spellcheck="false">
+      <button id="connect-btn">Connect</button>
+      <select id="network-select">
+        <option value="mainnet">mainnet</option>
+        <option value="testnet">testnet</option>
+      </select>
+    </div>
+    <div id="status-text">
+      <span class="status-dot connecting" id="status-dot"></span>
+      <span id="status-msg">Not connected</span>
+    </div>
+  </header>
+  <button id="new-notes-pill"></button>
+  <div id="feed">
+    <div id="identity-banner">
+      <div class="id-qr"><canvas id="my-qr"></canvas></div>
+      <div class="id-info">
+        <div class="id-title">Your Identity</div>
+        <div class="id-row"><span class="id-label">npub</span><span class="id-val" id="my-npub">—</span></div>
+        <div class="id-row"><span class="id-label">ALPH</span><span class="id-val" id="my-alph"></span></div>
+        <div class="id-balance loading" id="my-balance">loading balance...</div>
+        <div class="id-actions">
+          <button class="copy-sm" id="copy-my-npub">Copy npub</button>
+          <button class="copy-sm" id="copy-my-alph">Copy address</button>
+        </div>
+      </div>
+    </div>
+    <div id="empty-state">
+      <div class="spinner"></div>
+      <div>Enter a relay URL and click Connect</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import blakejs from 'https://esm.sh/blakejs@1.2.1'
+    import QRCode from 'https://esm.sh/qrcode@1.5.4'
+    import { schnorr } from 'https://esm.sh/@noble/curves@1.8.1/secp256k1'
+
+    // ===== Config =====
+
+    const NETWORKS = {
+      mainnet: {
+        nodeUrl: 'https://node.mainnet.alephium.org',
+        explorerUrl: 'https://explorer.alephium.org'
+      },
+      testnet: {
+        nodeUrl: 'https://node.testnet.alephium.org',
+        explorerUrl: 'https://explorer.testnet.alephium.org'
+      }
+    }
+    let currentNetwork = 'mainnet'
+    function getNodeUrl() { return NETWORKS[currentNetwork].nodeUrl }
+    function getExplorerUrl() { return NETWORKS[currentNetwork].explorerUrl }
+
+    const ONE_ALPH = 10n ** 18n
+    const DUST = 10n ** 15n  // 0.001 ALPH
+
+    // ===== Byte helpers =====
+
+    function hexToBytes(hex) {
+      const b = new Uint8Array(hex.length / 2)
+      for (let i = 0; i < hex.length; i += 2) b[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+      return b
+    }
+
+    // ===== Address derivation =====
+
+    const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+    const SCRIPT_PREFIX = '0101000000000458144020'
+    const SCRIPT_SUFFIX = '8685'
+
+    function base58Encode(bytes) {
+      let zeros = 0
+      for (const b of bytes) { if (b === 0) zeros++; else break }
+      const digits = []
+      for (const b of bytes) {
+        let carry = b
+        for (let i = 0; i < digits.length; i++) {
+          carry += digits[i] << 8; digits[i] = carry % 58; carry = Math.floor(carry / 58)
+        }
+        while (carry > 0) { digits.push(carry % 58); carry = Math.floor(carry / 58) }
+      }
+      return '1'.repeat(zeros) + digits.reverse().map(d => BASE58[d]).join('')
+    }
+
+    function djb2(bytes) {
+      let h = 5381
+      for (const b of bytes) h = ((h << 5) + h + (b & 0xff)) | 0
+      return h
+    }
+
+    function xorByte(n) {
+      return ((n >>> 24) & 0xff) ^ ((n >>> 16) & 0xff) ^ ((n >>> 8) & 0xff) ^ (n & 0xff)
+    }
+
+    function pubkeyToAlphAddress(pubkeyHex) {
+      const script = hexToBytes(SCRIPT_PREFIX + pubkeyHex + SCRIPT_SUFFIX)
+      const hash = blakejs.blake2b(script, undefined, 32)
+      const addr = new Uint8Array(33)
+      addr[0] = 0x02
+      addr.set(hash, 1)
+      return { address: base58Encode(addr), group: (xorByte(djb2(hash) | 1) & 0xff) % 4 }
+    }
+
+    // ===== Bech32 =====
+
+    const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
+
+    function bech32Polymod(values) {
+      const G = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
+      let chk = 1
+      for (const v of values) {
+        const b = chk >> 25
+        chk = ((chk & 0x1ffffff) << 5) ^ v
+        for (let i = 0; i < 5; i++) chk ^= ((b >> i) & 1) ? G[i] : 0
+      }
+      return chk
+    }
+
+    function bech32HrpExpand(hrp) {
+      const r = []
+      for (const c of hrp) r.push(c.charCodeAt(0) >> 5)
+      r.push(0)
+      for (const c of hrp) r.push(c.charCodeAt(0) & 31)
+      return r
+    }
+
+    function convertBits(data, from, to, pad = true) {
+      let acc = 0, bits = 0
+      const ret = [], maxv = (1 << to) - 1
+      for (const v of data) {
+        acc = (acc << from) | v; bits += from
+        while (bits >= to) { bits -= to; ret.push((acc >> bits) & maxv) }
+      }
+      if (pad && bits > 0) ret.push((acc << (to - bits)) & maxv)
+      return ret
+    }
+
+    function npubEncode(hexPubkey) {
+      const data5 = convertBits(hexToBytes(hexPubkey), 8, 5)
+      const hrpExp = bech32HrpExpand('npub')
+      const poly = bech32Polymod([...hrpExp, ...data5, 0, 0, 0, 0, 0, 0]) ^ 1
+      const checksum = Array.from({length: 6}, (_, i) => (poly >> (5 * (5 - i))) & 31)
+      return 'npub1' + [...data5, ...checksum].map(d => BECH32[d]).join('')
+    }
+
+    // ===== Bech32 decode + local signing =====
+
+    function bech32Decode(str) {
+      const hrp = str.slice(0, str.lastIndexOf('1'))
+      const dataStr = str.slice(hrp.length + 1)
+      const data5 = [...dataStr].map(c => {
+        const idx = BECH32.indexOf(c)
+        if (idx === -1) throw new Error('Invalid bech32 character')
+        return idx
+      })
+      if (bech32Polymod([...bech32HrpExpand(hrp), ...data5]) !== 1) throw new Error('Invalid bech32 checksum')
+      return new Uint8Array(convertBits(data5.slice(0, -6), 5, 8, false))
+    }
+
+    function bytesToHex(bytes) {
+      return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+    }
+
+    function decodeNsec(input) {
+      input = input.trim()
+      if (input.startsWith('nsec1')) return bytesToHex(bech32Decode(input))
+      if (/^[0-9a-fA-F]{64}$/.test(input)) return input
+      throw new Error('Invalid key — enter an nsec or 64-char hex private key')
+    }
+
+    function pubkeyFromPrivkey(privkeyHex) {
+      return bytesToHex(schnorr.getPublicKey(privkeyHex))
+    }
+
+    function signTxId(txIdHex, privkeyHex) {
+      return bytesToHex(schnorr.sign(txIdHex, privkeyHex))
+    }
+
+    // ===== ALPH formatting =====
+
+    function alphToAtto(val) {
+      const s = val.toString()
+      const parts = s.split('.')
+      const whole = parts[0] || '0'
+      const frac = (parts[1] || '').padEnd(18, '0').slice(0, 18)
+      return (BigInt(whole) * ONE_ALPH + BigInt(frac)).toString()
+    }
+
+    function formatAlph(attoStr) {
+      const v = BigInt(attoStr)
+      if (v === 0n) return '0'
+      const s = v.toString()
+      if (s.length <= 18) {
+        const frac = s.padStart(18, '0').replace(/0+$/, '')
+        return frac ? '0.' + frac : '0'
+      }
+      const whole = s.slice(0, s.length - 18)
+      const frac = s.slice(s.length - 18).replace(/0+$/, '')
+      return frac ? whole + '.' + frac : whole
+    }
+
+    // ===== Alephium Node API =====
+
+    async function alphGet(path) {
+      const resp = await fetch(getNodeUrl() + path)
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '')
+        let detail
+        try { detail = JSON.parse(body).detail } catch {}
+        throw new Error(detail || `API ${resp.status}: ${body.slice(0, 200)}`)
+      }
+      return resp.json()
+    }
+
+    async function alphPost(path, data) {
+      const resp = await fetch(getNodeUrl() + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '')
+        let detail
+        try { detail = JSON.parse(body).detail } catch {}
+        throw new Error(detail || `API ${resp.status}: ${body.slice(0, 200)}`)
+      }
+      return resp.json()
+    }
+
+    async function fetchBalance(address) {
+      try {
+        return await alphGet(`/addresses/${address}/balance`)
+      } catch (e) {
+        if (e.message.includes('404')) return { balance: '0', lockedBalance: '0', utxoNum: 0 }
+        throw e
+      }
+    }
+
+    async function buildTx(fromPubkey, toAddress, attoAmount) {
+      return alphPost('/transactions/build', {
+        fromPublicKey: fromPubkey,
+        fromPublicKeyType: 'bip340-schnorr',
+        destinations: [{ address: toAddress, attoAlphAmount: attoAmount }]
+      })
+    }
+
+    async function submitTx(unsignedTx, signature) {
+      return alphPost('/transactions/submit', { unsignedTx, signature })
+    }
+
+
+    // ===== State =====
+
+    const profiles = new Map()
+    const addressCache = new Map()
+    const notes = []
+    const seenIds = new Set()
+    let ws = null
+    let connectedWallet = null  // { pubkey, address, group }
+
+    function getAlphAddress(pubkeyHex) {
+      if (!addressCache.has(pubkeyHex)) addressCache.set(pubkeyHex, pubkeyToAlphAddress(pubkeyHex))
+      return addressCache.get(pubkeyHex)
+    }
+
+    // ===== Nostr relay =====
+
+    function connect(relayUrl) {
+      if (ws) { ws.close(); ws = null }
+      notes.length = 0
+      pendingNotes.length = 0
+      seenIds.clear()
+      initialLoad = true
+      updatePill()
+      setStatus('connecting', 'Connecting...')
+      renderFeed()
+
+      ws = new WebSocket(relayUrl)
+      const profilePubkeys = new Set()
+
+      ws.onopen = () => {
+        setStatus('connected', `Connected to ${relayUrl.replace('wss://', '')}`)
+        ws.send(JSON.stringify(['REQ', 'feed', { kinds: [1], limit: 40 }]))
+      }
+      ws.onmessage = (msg) => {
+        let data
+        try { data = JSON.parse(msg.data) } catch { return }
+        if (data[0] === 'EVENT') {
+          const event = data[2]
+          if (seenIds.has(event.id)) return
+          seenIds.add(event.id)
+          if (data[1] === 'feed' && event.kind === 1) {
+            notes.push(event)
+            profilePubkeys.add(event.pubkey)
+            insertNote(event)
+          }
+          if (data[1] === 'profiles' && event.kind === 0) {
+            try {
+              const meta = JSON.parse(event.content)
+              const existing = profiles.get(event.pubkey)
+              if (!existing || existing._ts < event.created_at) {
+                profiles.set(event.pubkey, { ...meta, _ts: event.created_at })
+                updateProfile(event.pubkey)
+              }
+            } catch {}
+          }
+        }
+        if (data[0] === 'EOSE' && data[1] === 'feed') {
+          initialLoad = false
+          const authors = [...profilePubkeys]
+          if (authors.length > 0)
+            ws.send(JSON.stringify(['REQ', 'profiles', { kinds: [0], authors }]))
+        }
+      }
+      ws.onerror = () => setStatus('error', 'Connection error')
+      ws.onclose = () => setStatus('error', 'Disconnected')
+    }
+
+    // ===== UI helpers =====
+
+    const feed = document.getElementById('feed')
+    const statusDot = document.getElementById('status-dot')
+    const statusMsg = document.getElementById('status-msg')
+
+    function setStatus(state, text) {
+      statusDot.className = 'status-dot ' + state
+      statusMsg.textContent = currentNetwork !== 'mainnet' ? text + ` [${currentNetwork}]` : text
+    }
+
+    function timeAgo(ts) {
+      const s = Math.floor(Date.now() / 1000) - ts
+      if (s < 60) return 'now'
+      if (s < 3600) return Math.floor(s / 60) + 'm'
+      if (s < 86400) return Math.floor(s / 3600) + 'h'
+      return Math.floor(s / 86400) + 'd'
+    }
+
+    function shortNpub(hex) {
+      const n = npubEncode(hex)
+      return n.slice(0, 12) + '...' + n.slice(-6)
+    }
+
+    function truncate(text, max) {
+      return text.length <= max ? text : text.slice(0, max) + '...'
+    }
+
+    function esc(str) {
+      const d = document.createElement('div')
+      d.textContent = str
+      return d.innerHTML
+    }
+
+    function escContent(str) {
+      return esc(str).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:#7c8cff">$1</a>')
+    }
+
+    async function copyText(text, btn) {
+      try { await navigator.clipboard.writeText(text) } catch {
+        const ta = document.createElement('textarea')
+        ta.value = text; document.body.appendChild(ta); ta.select()
+        document.execCommand('copy'); document.body.removeChild(ta)
+      }
+      btn.textContent = 'Copied'
+      btn.classList.add('ok')
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok') }, 1200)
+    }
+
+    // ===== Feed rendering =====
+
+    const pendingNotes = []     // buffered notes not yet in DOM
+    const pill = document.getElementById('new-notes-pill')
+    let initialLoad = true      // true until first EOSE
+
+    function renderFeed() {
+      // Clear everything except identity-banner
+      const banner = document.getElementById('identity-banner')
+      feed.innerHTML = ''
+      if (banner) feed.prepend(banner)
+
+      if (notes.length === 0) {
+        feed.insertAdjacentHTML('beforeend',
+          '<div id="empty-state"><div class="spinner"></div><div>Loading notes...</div></div>')
+        return
+      }
+      const sorted = [...notes].sort((a, b) => b.created_at - a.created_at)
+      for (const event of sorted) feed.appendChild(createNoteEl(event))
+    }
+
+    function insertNote(event) {
+      const empty = document.getElementById('empty-state')
+      if (empty) empty.remove()
+
+      // During initial load, insert directly. After that, buffer everything.
+      if (initialLoad) {
+        const el = createNoteEl(event)
+        const children = [...feed.querySelectorAll('.note')]
+        const ref = children.find(c => event.created_at > parseInt(c.dataset.ts || '0'))
+        if (ref) feed.insertBefore(el, ref)
+        else feed.appendChild(el)
+        return
+      }
+
+      pendingNotes.push(event)
+      updatePill()
+    }
+
+    function flushPending() {
+      const sorted = pendingNotes.splice(0).sort((a, b) => b.created_at - a.created_at)
+      for (const event of sorted) {
+        const el = createNoteEl(event)
+        const children = [...feed.querySelectorAll('.note')]
+        const ref = children.find(c => event.created_at > parseInt(c.dataset.ts || '0'))
+        if (ref) feed.insertBefore(el, ref)
+        else feed.appendChild(el)
+      }
+      updatePill()
+    }
+
+    function updatePill() {
+      if (pendingNotes.length === 0) {
+        pill.classList.remove('visible')
+        return
+      }
+      pill.textContent = pendingNotes.length === 1
+        ? '1 new note'
+        : pendingNotes.length + ' new notes'
+      pill.classList.add('visible')
+    }
+
+    pill.addEventListener('click', flushPending)
+
+    function createNoteEl(event) {
+      const profile = profiles.get(event.pubkey)
+      const el = document.createElement('div')
+      el.className = 'note'
+      el.dataset.ts = event.created_at
+      el.dataset.pubkey = event.pubkey
+      el.id = 'note-' + event.id
+
+      const name = profile?.display_name || profile?.name || shortNpub(event.pubkey)
+      const avatarSrc = profile?.picture || ''
+      const nip05 = profile?.nip05 || ''
+
+      el.innerHTML = `
+        <div class="note-header">
+          ${avatarSrc
+            ? `<img class="avatar" src="${esc(avatarSrc)}" onerror="this.style.display='none'" loading="lazy">`
+            : `<div class="avatar"></div>`}
+          <div class="author-info">
+            <div class="author-name">${esc(name)}${nip05 ? ` <span class="nip05">${esc(nip05)}</span>` : ''}</div>
+            <div class="author-npub">${esc(shortNpub(event.pubkey))}</div>
+          </div>
+          <div class="timestamp">${timeAgo(event.created_at)}</div>
+        </div>
+        <div class="note-content">${escContent(truncate(event.content, 400))}</div>
+        <div class="note-footer">
+          <button class="alph-zap-btn" data-pubkey="${event.pubkey}">ALPH Zap</button>
+        </div>
+        <div class="zap-panel" id="zap-${event.id}"></div>`
+
+      el.querySelector('.alph-zap-btn').addEventListener('click', () => openZapPanel(event.id, event.pubkey))
+      return el
+    }
+
+    function updateProfile(pubkey) {
+      const profile = profiles.get(pubkey)
+      if (!profile) return
+      document.querySelectorAll(`[data-pubkey="${pubkey}"]`).forEach(noteEl => {
+        const nameEl = noteEl.querySelector('.author-name')
+        if (nameEl) {
+          const name = profile.display_name || profile.name || shortNpub(pubkey)
+          const nip05 = profile.nip05 || ''
+          nameEl.innerHTML = `${esc(name)}${nip05 ? ` <span class="nip05">${esc(nip05)}</span>` : ''}`
+        }
+        const avatarEl = noteEl.querySelector('.avatar')
+        if (avatarEl && profile.picture && !avatarEl.src) {
+          const img = document.createElement('img')
+          img.className = 'avatar'
+          img.src = profile.picture
+          img.loading = 'lazy'
+          img.onerror = () => img.style.display = 'none'
+          avatarEl.replaceWith(img)
+        }
+      })
+    }
+
+    // ===== Zap panel =====
+
+    let openPanelId = null
+
+    function openZapPanel(eventId, recipientPubkey) {
+      // Close any open panel
+      if (openPanelId) {
+        const prev = document.getElementById('zap-' + openPanelId)
+        if (prev) { prev.classList.remove('open'); prev.innerHTML = '' }
+      }
+      const panel = document.getElementById('zap-' + eventId)
+      if (!panel) return
+      if (openPanelId === eventId) { openPanelId = null; return }
+      openPanelId = eventId
+
+      const { address, group } = getAlphAddress(recipientPubkey)
+      const profile = profiles.get(recipientPubkey)
+      const name = profile?.display_name || profile?.name || shortNpub(recipientPubkey)
+      const npub = npubEncode(recipientPubkey)
+
+      const hasSchnorr = typeof window.nostr?.signSchnorr === 'function'
+
+      panel.innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+          <div class="zap-label" style="margin:0;flex:1">Send ALPH to ${esc(name)}</div>
+          <span class="group-badge">group ${group}</span>
+          <button class="copy-sm" id="cpaddr-${eventId}">Copy addr</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap">
+          <div class="amount-presets" id="presets-${eventId}">
+            <button data-val="1">1</button>
+            <button data-val="10" class="active">10</button>
+            <button data-val="100">100</button>
+            <div class="amount-input-row" style="margin:0">
+              <input type="number" id="amt-${eventId}" min="0.001" step="0.001" value="10" style="width:80px">
+              <span>ALPH</span>
+            </div>
+          </div>
+          ${hasSchnorr ? `
+            <button class="btn-primary" id="sendbtn-${eventId}"
+              style="margin-left:auto;width:auto;padding:0.3rem 1rem">Send</button>
+          ` : ''}
+        </div>
+        ${hasSchnorr ? `
+          <div style="margin-top:0.35rem;font-size:0.68rem;color:#555;cursor:pointer;user-select:none"
+               id="nsec-toggle-${eventId}">or sign with nsec &#9656;</div>
+        ` : `
+          <div style="margin-top:0.25rem;font-size:0.68rem;color:#888">
+            ${window.nostr ? 'Extension lacks signSchnorr — sign' : 'No extension detected — sign'} with nsec:</div>
+        `}
+        <div id="nsec-section-${eventId}" style="${hasSchnorr ? 'display:none;' : ''}margin-top:0.3rem">
+          <div style="display:flex;align-items:center;gap:0.3rem">
+            <input type="password" id="nsec-${eventId}" placeholder="nsec1... or hex private key"
+              style="flex:1;background:#1a1a3a;border:1px solid #2a2a4a;color:#eee;padding:0.25rem 0.4rem;border-radius:5px;font-size:0.75rem;font-family:monospace">
+            <button class="btn-primary" id="nsec-send-${eventId}"
+              style="width:auto;padding:0.3rem 1rem">Send</button>
+          </div>
+        </div>
+        <div id="result-${eventId}"></div>`
+
+      panel.classList.add('open')
+
+      // Copy address
+      document.getElementById('cpaddr-' + eventId)
+        .addEventListener('click', (e) => copyText(address, e.target))
+
+      // Preset buttons sync with input
+      const amtInput = document.getElementById('amt-' + eventId)
+      const presets = document.getElementById('presets-' + eventId)
+
+      presets.addEventListener('click', (e) => {
+        if (!e.target.dataset.val) return
+        amtInput.value = e.target.dataset.val
+        presets.querySelectorAll('button').forEach(b => b.classList.remove('active'))
+        e.target.classList.add('active')
+      })
+      amtInput.addEventListener('input', () => {
+        presets.querySelectorAll('button').forEach(b => {
+          b.classList.toggle('active', parseFloat(b.dataset.val) === parseFloat(amtInput.value))
+        })
+      })
+
+      // Send via extension (signSchnorr)
+      if (hasSchnorr) {
+        document.getElementById('sendbtn-' + eventId)
+          .addEventListener('click', () => sendViaExtension(eventId, recipientPubkey, address))
+        // Toggle nsec section
+        document.getElementById('nsec-toggle-' + eventId)
+          .addEventListener('click', (e) => {
+            const sec = document.getElementById('nsec-section-' + eventId)
+            const showing = sec.style.display !== 'none'
+            sec.style.display = showing ? 'none' : 'block'
+            e.target.innerHTML = showing ? 'or sign with nsec &#9656;' : 'or sign with nsec &#9662;'
+          })
+      }
+
+      // Send via nsec (local signing)
+      document.getElementById('nsec-send-' + eventId)
+        .addEventListener('click', () => sendWithNsec(eventId, recipientPubkey, address))
+    }
+
+    // ===== Send flows =====
+
+    function getSelectedAmount(eventId) {
+      const v = parseFloat(document.getElementById('amt-' + eventId).value)
+      if (!v || v <= 0) throw new Error('Enter a valid amount')
+      return v
+    }
+
+    function showResult(eventId, cls, html) {
+      const el = document.getElementById('result-' + eventId)
+      if (el) { el.className = 'zap-status ' + cls; el.innerHTML = html }
+    }
+
+    async function sendViaExtension(eventId, recipientPubkey, toAddress) {
+      const btn = document.getElementById('sendbtn-' + eventId)
+      btn.disabled = true
+      try {
+        const amount = getSelectedAmount(eventId)
+        const attoAmount = alphToAtto(amount)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Connecting extension...')
+        const senderPubkey = await window.nostr.getPublicKey()
+        const { address: senderAddr } = getAlphAddress(senderPubkey)
+        showIdentityBanner(senderPubkey)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Checking balance...')
+        const bal = await fetchBalance(senderAddr)
+        const available = BigInt(bal.balance) - BigInt(bal.lockedBalance)
+
+        if (available < BigInt(attoAmount) + DUST) {
+          showResult(eventId, 'err',
+            `Insufficient balance: ${formatAlph(bal.balance)} ALPH at<br><span class="mono">${esc(senderAddr)}</span>`)
+          return
+        }
+
+        showResult(eventId, 'info',
+          `<span class="spin-inline"></span> Building tx... (${formatAlph(bal.balance)} ALPH available)`)
+        const tx = await buildTx(senderPubkey, toAddress, attoAmount)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Signing with extension...')
+        let signature
+        if (typeof window.nostr.signSchnorr === 'function') {
+          signature = await window.nostr.signSchnorr(tx.txId)
+        } else {
+          // Fallback: wrap in a NIP-07 signEvent call and extract sig
+          // The extension signs sha256(event), not txId directly,
+          // so this only works if the extension exposes signSchnorr.
+          showResult(eventId, 'err',
+            `Extension lacks <code>signSchnorr()</code>. Use the nsec option below to sign locally.`)
+          return
+        }
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Broadcasting...')
+        const result = await submitTx(tx.unsignedTx, signature)
+
+        showResult(eventId, 'ok',
+          `Sent ${amount} ALPH!<br>
+           <a href="${getExplorerUrl()}/transactions/${result.txId}" target="_blank" rel="noopener">
+           View on explorer</a><br>
+           <span class="mono">${result.txId}</span>`)
+      } catch (e) {
+        showResult(eventId, 'err', esc(e.message || String(e)))
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    async function sendWithNsec(eventId, recipientPubkey, toAddress) {
+      const btn = document.getElementById('nsec-send-' + eventId)
+      btn.disabled = true
+      try {
+        const nsecVal = document.getElementById('nsec-' + eventId).value.trim()
+        if (!nsecVal) throw new Error('Enter your nsec or hex private key')
+
+        const amount = getSelectedAmount(eventId)
+        const attoAmount = alphToAtto(amount)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Deriving address...')
+        const privkey = decodeNsec(nsecVal)
+        const senderPubkey = pubkeyFromPrivkey(privkey)
+        const { address: senderAddr } = getAlphAddress(senderPubkey)
+        showIdentityBanner(senderPubkey)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Checking balance...')
+        const bal = await fetchBalance(senderAddr)
+        const available = BigInt(bal.balance) - BigInt(bal.lockedBalance)
+
+        if (available < BigInt(attoAmount) + DUST) {
+          showResult(eventId, 'err',
+            `Insufficient balance: ${formatAlph(bal.balance)} ALPH at<br><span class="mono">${esc(senderAddr)}</span>`)
+          return
+        }
+
+        showResult(eventId, 'info',
+          `<span class="spin-inline"></span> Building tx... (${formatAlph(bal.balance)} ALPH available)`)
+        const tx = await buildTx(senderPubkey, toAddress, attoAmount)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Signing locally (BIP-340 Schnorr)...')
+        const signature = signTxId(tx.txId, privkey)
+
+        showResult(eventId, 'info', '<span class="spin-inline"></span> Broadcasting...')
+        const result = await submitTx(tx.unsignedTx, signature)
+
+        showResult(eventId, 'ok',
+          `Sent ${amount} ALPH!<br>
+           <a href="${getExplorerUrl()}/transactions/${result.txId}" target="_blank" rel="noopener">
+           View on explorer</a><br>
+           <span class="mono">${result.txId}</span>`)
+      } catch (e) {
+        showResult(eventId, 'err', esc(e.message || String(e)))
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    // ===== Identity banner =====
+
+    let identityBound = false
+    let myNpubVal = '', myAlphVal = ''
+    let lastIdentityPubkey = null
+
+    async function showIdentityBanner(pubkey) {
+      const banner = document.getElementById('identity-banner')
+      myNpubVal = npubEncode(pubkey)
+      const { address, group } = getAlphAddress(pubkey)
+      myAlphVal = address
+
+      document.getElementById('my-npub').textContent = myNpubVal
+
+      // Link address to explorer
+      const alphEl = document.getElementById('my-alph')
+      alphEl.innerHTML = `<a href="${getExplorerUrl()}/addresses/${esc(address)}" target="_blank" rel="noopener">${esc(address)}</a> <span style="color:#666;font-size:0.68rem">(group ${group})</span>`
+
+      banner.classList.add('visible')
+
+      // QR code (only redraw if pubkey changed)
+      if (lastIdentityPubkey !== pubkey) {
+        lastIdentityPubkey = pubkey
+        try {
+          await QRCode.toCanvas(document.getElementById('my-qr'), address, {
+            width: 100, margin: 1, color: { dark: '#000', light: '#fff' }
+          })
+        } catch {}
+      }
+
+      // Fetch balance
+      const balEl = document.getElementById('my-balance')
+      balEl.className = 'id-balance loading'
+      balEl.textContent = 'loading balance...'
+      try {
+        const bal = await fetchBalance(address)
+        const total = formatAlph(bal.balance)
+        const utxos = bal.utxoNum ?? '?'
+        balEl.className = 'id-balance'
+        balEl.textContent = total + ' ALPH (' + utxos + ' UTXO' + (utxos === 1 ? '' : 's') + ')'
+      } catch {
+        balEl.className = 'id-balance loading'
+        balEl.textContent = 'balance unavailable'
+      }
+
+      if (!identityBound) {
+        identityBound = true
+        document.getElementById('copy-my-npub').addEventListener('click', (e) => copyText(myNpubVal, e.target))
+        document.getElementById('copy-my-alph').addEventListener('click', (e) => copyText(myAlphVal, e.target))
+      }
+    }
+
+    // Try to load identity from extension on page load
+    async function tryLoadIdentity() {
+      if (!window.nostr) return
+      try {
+        const pubkey = await window.nostr.getPublicKey()
+        if (pubkey) showIdentityBanner(pubkey)
+      } catch {}
+    }
+
+    // ===== Init =====
+
+    function connectAll() {
+      connect(relayInput.value.trim())
+      tryLoadIdentity()
+    }
+
+    const relayInput = document.getElementById('relay-input')
+    document.getElementById('connect-btn').addEventListener('click', connectAll)
+    relayInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectAll() })
+
+    document.getElementById('network-select').addEventListener('change', (e) => {
+      currentNetwork = e.target.value
+      // Re-fetch identity banner balance for the new network
+      if (lastIdentityPubkey) showIdentityBanner(lastIdentityPubkey)
+    })
+
+    connectAll()
+  </script>
+</body>
+</html>
