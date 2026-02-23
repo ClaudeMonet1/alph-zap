@@ -259,8 +259,41 @@
     }
     #identity-banner .id-balance.loading { color: #666; font-weight: 400; font-size: 0.75rem; }
     #identity-banner .id-actions {
-      display: flex; gap: 0.4rem; margin-top: 0.35rem;
+      display: flex; gap: 0.4rem; margin-top: 0.35rem; flex-wrap: wrap;
     }
+    .sweep-btn {
+      background: #3a1a1a; color: #ef4444; border: 1px solid #5a2a2a;
+      padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer;
+      font-size: 0.7rem; font-weight: 600; white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .sweep-btn:hover { background: #5a2a2a; }
+    .sweep-panel {
+      margin-top: 0.5rem; padding: 0.6rem 0.7rem;
+      background: #0d0d20; border: 1px solid #2a1a1a;
+      border-radius: 8px; display: none;
+    }
+    .sweep-panel.open { display: block; }
+    .sweep-panel .sweep-label {
+      font-size: 0.78rem; color: #ef4444; font-weight: 600; margin-bottom: 0.35rem;
+    }
+    .sweep-panel .sweep-input-row {
+      display: flex; align-items: center; gap: 0.3rem; margin-top: 0.3rem;
+    }
+    .sweep-panel .sweep-input-row input {
+      flex: 1; background: #1a1a3a; border: 1px solid #2a2a4a; color: #eee;
+      padding: 0.3rem 0.5rem; border-radius: 5px; font-size: 0.75rem;
+      font-family: monospace;
+    }
+    .sweep-panel .sweep-input-row input:focus { border-color: #ef4444; outline: none; }
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: #fff; border: none; padding: 0.4rem 1rem;
+      border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.8rem;
+      transition: opacity 0.15s; white-space: nowrap;
+    }
+    .btn-danger:hover { opacity: 0.85; }
+    .btn-danger:disabled { opacity: 0.4; cursor: default; }
   </style>
 </head>
 <body>
@@ -292,6 +325,15 @@
         <div class="id-actions">
           <button class="copy-sm" id="copy-my-npub">Copy npub</button>
           <button class="copy-sm" id="copy-my-alph">Copy address</button>
+          <button class="sweep-btn" id="sweep-all-btn">Sweep All</button>
+        </div>
+        <div class="sweep-panel" id="sweep-panel">
+          <div class="sweep-label">Sweep all ALPH to another address</div>
+          <div class="sweep-input-row">
+            <input type="text" id="sweep-dest" placeholder="Destination ALPH address" spellcheck="false">
+            <button class="btn-danger" id="sweep-confirm-btn">Confirm Sweep</button>
+          </div>
+          <div id="sweep-status"></div>
         </div>
       </div>
     </div>
@@ -971,6 +1013,95 @@
       }
     }
 
+    // ===== Sweep all =====
+
+    function showSweepStatus(cls, html) {
+      const el = document.getElementById('sweep-status')
+      if (el) { el.className = 'zap-status ' + cls; el.innerHTML = html }
+    }
+
+    async function performSweep() {
+      const btn = document.getElementById('sweep-confirm-btn')
+      btn.disabled = true
+      try {
+        const toAddress = document.getElementById('sweep-dest').value.trim()
+        if (!toAddress) throw new Error('Enter a destination address')
+
+        showSweepStatus('info', '<span class="spin-inline"></span> Connecting extension...')
+        const senderPubkey = await window.nostr.getPublicKey()
+        const { address: senderAddr } = getAlphAddress(senderPubkey)
+
+        showSweepStatus('info', '<span class="spin-inline"></span> Fetching balance...')
+        const bal = await fetchBalance(senderAddr)
+        const available = BigInt(bal.balance) - BigInt(bal.lockedBalance)
+
+        if (available <= DUST) {
+          showSweepStatus('err', `Nothing to sweep (${formatAlph(bal.balance)} ALPH)`)
+          return
+        }
+
+        // Estimate gas fee via a probe tx that leaves plenty of room for change,
+        // or fall back to the default minimum fee for small balances.
+        showSweepStatus('info', '<span class="spin-inline"></span> Estimating fees...')
+        const DEFAULT_GAS_FEE = 20000n * 100000000000n  // 0.002 ALPH
+        let gasFee = DEFAULT_GAS_FEE
+
+        if (available >= 4n * DUST) {
+          // Probe with an amount that guarantees change >= DUST
+          const probeAmount = available >= ONE_ALPH + DUST
+            ? available - ONE_ALPH
+            : DUST
+          try {
+            const probeTx = await buildTx(senderPubkey, toAddress, probeAmount.toString())
+            gasFee = BigInt(probeTx.gasAmount) * BigInt(probeTx.gasPrice)
+          } catch {
+            gasFee = DEFAULT_GAS_FEE
+          }
+        }
+
+        // First attempt: send available - gasFee (targets zero change)
+        let sweepAmount = available - gasFee
+        if (sweepAmount < DUST) {
+          showSweepStatus('err',
+            `Balance too low to cover gas (${formatAlph(bal.balance)} ALPH, fee ~${formatAlph(gasFee.toString())} ALPH)`)
+          return
+        }
+
+        showSweepStatus('info',
+          `<span class="spin-inline"></span> Building sweep tx (${formatAlph(sweepAmount.toString())} ALPH)...`)
+        let tx
+        try {
+          tx = await buildTx(senderPubkey, toAddress, sweepAmount.toString())
+        } catch (firstErr) {
+          // Likely dust-change issue: the real tx uses slightly less gas than
+          // the probe (fewer outputs), leaving a tiny unspendable remainder.
+          // Retry leaving DUST as valid change.
+          sweepAmount = available - gasFee - DUST
+          if (sweepAmount < DUST) throw firstErr
+          tx = await buildTx(senderPubkey, toAddress, sweepAmount.toString())
+        }
+
+        showSweepStatus('info', '<span class="spin-inline"></span> Signing with extension...')
+        const signature = await window.nostr.signSchnorr(tx.txId)
+
+        showSweepStatus('info', '<span class="spin-inline"></span> Broadcasting...')
+        const result = await submitTx(tx.unsignedTx, signature)
+
+        showSweepStatus('ok',
+          `Swept ${formatAlph(sweepAmount.toString())} ALPH!<br>
+           <a href="${getExplorerUrl()}/transactions/${result.txId}" target="_blank" rel="noopener">
+           View on explorer</a><br>
+           <span class="mono">${result.txId}</span>`)
+
+        // Refresh balance
+        if (lastIdentityPubkey) showIdentityBanner(lastIdentityPubkey)
+      } catch (e) {
+        showSweepStatus('err', esc(e.message || String(e)))
+      } finally {
+        btn.disabled = false
+      }
+    }
+
     // ===== Identity banner =====
 
     let identityBound = false
@@ -1020,6 +1151,11 @@
         identityBound = true
         document.getElementById('copy-my-npub').addEventListener('click', (e) => copyText(myNpubVal, e.target))
         document.getElementById('copy-my-alph').addEventListener('click', (e) => copyText(myAlphVal, e.target))
+        document.getElementById('sweep-all-btn').addEventListener('click', () => {
+          const panel = document.getElementById('sweep-panel')
+          panel.classList.toggle('open')
+        })
+        document.getElementById('sweep-confirm-btn').addEventListener('click', performSweep)
       }
     }
 
